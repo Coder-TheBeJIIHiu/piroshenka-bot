@@ -38,10 +38,11 @@ const bot = new Telegraf(process.env.BOT_TOKEN);
 // Middleware для регистрации пользователей
 bot.use(async (ctx, next) => {
     const startTime = Date.now() / 1000;
-    const msgDate = ctx.message ? ctx.message.date : Date.now() / 1000;
+    const msgDate = ctx.message ? ctx.message.date : null;
 
     const Time = await checkTime(ctx, startTime, msgDate);
     if (!Time) return;
+    sendError(ctx, Time)
 
     // Проверяем наличие ctx.message перед использованием
     if (ctx.message) {
@@ -177,12 +178,11 @@ function start() {
 }
 
 async function checkTime(ctx, startTime, msgDate) {
-  if (msgDate < startTime - 30000) {
+  if (msgDate < startTime - 30) {
     await sendError(
       ctx,
-      `Я отстаю от настоящего времени на более чем 30 сек. (Точнее на ±${Math.floor((startTime - msgDate) / 1000) / 60} мин)\n\n🕐 | Пинг: ${startTime - msgDate}мс.`,
+      `Я отстаю от настоящего времени на более чем 30 сек. (Точнее на ±${Math.floor((startTime - msgDate) / 1000) / 60} мин)\n\n🕐 | Пинг: ${((startTime - msgDate) * 1000)}мс.`,
     );
-    ctx.session.used = false;
     return false;
   } else {
     return true;
