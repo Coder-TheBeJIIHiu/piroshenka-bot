@@ -1,5 +1,5 @@
 entrypoint = "index.js"
-modules = ["nodejs-20:v8-20230920-bd784b9"]
+modules = ["nodejs-20:v8-20230920-bd784b9", "python-3.10:v25-20230920-d4ad2e4"]
 hidden = [".config", "package-lock.json"]
 
 [gitHubImport]
@@ -23,12 +23,8 @@ ignorePorts = false
 [rules.formatter.fileExtensions]
 
 [rules.formatter.fileExtensions.".js"]
-id = "module:nodejs-20:v32-20240401-269b323/languageServer:typescript-language-server"
+id = "module:nodejs-20:v36-20240502-f4453db/formatter:prettier"
 
 [[ports]]
-localPort = 80
-externalPort = 3000
-
-[[ports]]
-localPort = 3000
+localPort = 8080
 externalPort = 80

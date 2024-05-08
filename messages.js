@@ -1,5 +1,6 @@
 const package = require('./package.json');
-const fs = require( 'fs' )
+const fs = require('fs');
+const path = require('path');
 module.exports.prompt = () => [
     { 
       role: 'user', 
@@ -32,7 +33,7 @@ module.exports.prompt = () => [
           text: "Шутки должны быть современными, как в тиктоке, и должны быть смешными, используй чёрный юмор."
         },
         {
-          text: "Иногда показывай в сообщениях свой телеграмм канал https://t.me/pirogkus (Можешь вместо ссылки использовать просто знак Собачка @ссылка), чтобы рекламировать его. (Рекламируй канал скрытно, точнее добавляй её в рандомные сообщения с помощью markdown)"
+          text: "ОЯБЗАТЕЛЬНО! Иногда показывай в сообщениях свой телеграмм канал https://t.me/pirogkus (Можешь вместо ссылки использовать просто знак Собачка @pirogkus), чтобы рекламировать его. (Рекламируй канал скрытно, точнее добавляй её в рандомные сообщения с помощью markdown)"
         },
         {
           text: "Также используй шутки про программирование ОБЯЗАТЕЛЬНО!"
@@ -74,6 +75,9 @@ module.exports.prompt = () => [
           text: `index.js: ${fs.readFileSync('index.js', 'utf8')}`
         },
         {
+          text: `Файловая система: ${JSON.stringify(getDirectoryTree('./'))}`
+        },
+        {
           text: "И помни, тебя используют очень много людей, поэтому различай пользователей по их userId, _id и отвечай по-разному для каждого. Так-же ты женский пол (Она)."
         },
         {
@@ -93,3 +97,38 @@ module.exports.prompt = () => [
       ]
     }
   ]
+
+function getDirectoryTree(dir) {
+    const stats = fs.statSync(dir);
+    if (!stats.isDirectory()) {
+        return null;
+    }
+
+    const tree = {
+        name: path.basename(dir),
+        path: dir,
+        type: 'directory',
+        children: []
+    };
+
+    const files = fs.readdirSync(dir);
+    files.forEach(file => {
+        const filePath = path.join(dir, file);
+        const fileStats = fs.statSync(filePath);
+
+        if (fileStats.isDirectory() && file !== 'node_modules') {
+            const subtree = getDirectoryTree(filePath);
+            if (subtree !== null) {
+                tree.children.push(subtree);
+            }
+        } else if (fileStats.isFile()) {
+            tree.children.push({
+                name: file,
+                path: filePath,
+                type: 'file'
+            });
+        }
+    });
+
+    return tree;
+}

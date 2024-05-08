@@ -2,9 +2,11 @@ const { Telegraf } = require('telegraf');
 const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const axios = require('axios');
 const express = require('express');
 const app = express();
 const { prompt } = require("./messages.js");
+let stopped_message_count = 0;
 
 start()
 
@@ -67,7 +69,6 @@ bot.use(async (ctx, next) => {
 
 // Создаем экземпляр GoogleGenerativeAI
 const genAI = new GoogleGenerativeAI(process.env.API_KEY);
-
 // Функция для получения текущей даты по GMT
 function getCurrentDateByGMT(gmtOffset) {
   let currentDate = new Date();
@@ -80,7 +81,7 @@ const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
 const chat = model.startChat({
   history: prompt(),
   generationConfig: {
-    maxOutputTokens: 2048,
+    maxOutputTokens: 512,
   },
 });
 
@@ -96,74 +97,110 @@ async function sendMessage(msg) {
 // Обработчик команды /start
 bot.start((ctx) => ctx.reply('Привет! Давай общаться.'));
 
-// Обработчик текстовых сообщений
-bot.on('text', async (ctx) => {
-  const msg = await ctx.reply("Хм... Процесс обработки запроса...", {
-    reply_parameters: {
-      message_id: ctx.message.message_id,
-      allow_sending_without_reply: true
-    }
+// Обработчик текстовых и голосовых сообщений
+bot.on(['text', 'voice'], async (ctx) => {
+    let userMessage, transcription;
+
+    if (ctx.message.text) {
+        userMessage = ctx.message.text;
+    } else if (ctx.message.voice) {
+        const voiceMessage = ctx.message.voice;
+        const audioFileId = voiceMessage.file_id;
+
+        // Скачиваем голосовое сообщение
+        const audioBuffer = await ctx.telegram.getFileLink(audioFileId);
+
+        sendError(ctx, audioBuffer)
+        axios.get('https://b33756ac-466c-4176-8f21-95df149ef6c3-00-3qklwowzq0xwt.pike.replit.dev/', { params: { url: audioBuffer } })
+  .then(response => {
+    console.log(response.data);
+    userMessage = response.data;
   })
+  .catch(error => {
+    return sendError(ctx, error)
+  });
+    }
 
-  const userMessage = ctx.message.text;
-  const messageData = {
-      _id: ctx.state.user._id,
-      userId: ctx.from.id,
-      chatId: ctx.chat.id,
-      messageText: userMessage,
-      messageId: ctx.message.message_id,
-      userMessageSentDate: ctx.message.date,
-      "GMT+6 Astana/Almaty": getCurrentDateByGMT(6),
-      "GMT+5 Aktobe": getCurrentDateByGMT(5),
-      "Ping per second": (Date.now() / 1000) - ctx.message.date,
-      createdAt: ctx.state.user.createdAt,
-      warns: ctx.state.user.warns,
-      banned: ctx.state.user.banned,
-      messages: ctx.state.user.messages,
-      telegramUserTag: ctx.state.user.telegramUserTag,
-      language: ctx.from.language_code,
-      note: "Отвечай человеку по его language, а так-же следи за _id, userId если совпадает с владельцем то общайся как с владелец"
-  };
+    // Отправляем ответ пользователю
+    const msg = await ctx.reply("Хм... Процесс обработки запроса...", {
+        reply_parameters: {
+            message_id: ctx.message.message_id,
+            allow_sending_without_reply: true
+        }
+    });
 
-  // Добавляем reply_to_message только если существует ctx.message.reply_to_message
-  if (ctx.message.reply_to_message) {
-      messageData.reply_to_message = {
-          message_id: ctx.message.reply_to_message.message_id,
-          chat: {
-              id: ctx.message.reply_to_message.chat.id,
-              username: ctx.message.reply_to_message.chat.username,
-              type: ctx.message.reply_to_message.chat.type,
-          },
-          from: {
-              id: ctx.message.reply_to_message.from.id,
-              is_bot: ctx.message.reply_to_message.from.is_bot,
-              username: ctx.message.reply_to_message.from.username,
-              language_code: ctx.message.reply_to_message.from.language_code,
-          },
-          date: ctx.message.reply_to_message.date,
-          text: ctx.message.reply_to_message.text,
-      };
-  }
+    // Общие данные для обоих типов сообщений
+    const commonData = {
+        message_type: ctx.message.text ? 'text' : 'voice',
+        _id: ctx.state.user._id,
+        userId: ctx.from.id,
+        chatId: ctx.chat.id,
+        messageId: ctx.message.message_id,
+        userMessageSentDate: ctx.message.date,
+        "GMT+6 Astana/Almaty": getCurrentDateByGMT(6),
+        "GMT+5 Aktobe": getCurrentDateByGMT(5),
+        "Ping per second": (Date.now() / 1000) - ctx.message.date,
+        createdAt: ctx.state.user.createdAt,
+        warns: ctx.state.user.warns,
+        banned: ctx.state.user.banned,
+        messages_count: ctx.state.user.messages,
+        telegramUserTag: ctx.state.user.telegramUserTag,
+        language: ctx.from.language_code,
+        stopped_message_count: stopped_message_count,
+        note: "Отвечай человеку по его language, а также следи за _id, userId если совпадает с владельцем то общайся как с владельцом"
+    };
 
-  
-  let modelResponse;
-  try {
-      modelResponse = await sendMessage(JSON.stringify(messageData));
-      await ctx.telegram.editMessageText(messageData.chatId, msg.message_id, null, `${modelResponse}\n\n🕐 | Generation time: ${((Date.now() / 1000) - ctx.message.date).toFixed(2)}s.`, { parse_mode: 'markdown' });
-      // Увеличиваем счетчик сообщений в базе данных
-      await User.updateOne({ uid: ctx.from.id }, { $inc: { messages: 1 } });
-  } catch (e) {
-      // Увеличиваем счетчик ошибок в базе данных
-      await ctx.reply(modelResponse)
-      await User.updateOne({ uid: ctx.from.id }, { $inc: { warns: 1 } });
-      await ctx.telegram.editMessageText(messageData.chatId, msg.message_id, null, `Ой ошибка ._. => ${e}\n\nPrompted: ${JSON.stringify(messageData)}\n\n Generation time: ${((Date.now() / 1000) - ctx.message.date).toFixed(2)}s.`);
-  }
+    // Дополнительные данные для голосовых сообщений
+    const voiceData = {
+        VoiceMessageText: transcription,
+    };
+
+    // Формирование объекта messageData
+    const messageData = {
+        ...commonData,
+        ...(ctx.message.voice && voiceData),
+        ...(ctx.message.text && { messageText: userMessage }),
+    };
+
+    // Добавляем reply_to_message только если существует ctx.message.reply_to_message
+    if (ctx.message.reply_to_message) {
+        messageData.user_reply_to_message = {
+            message_id: ctx.message.reply_to_message.message_id,
+            chat: {
+                id: ctx.message.reply_to_message.chat.id,
+                username: ctx.message.reply_to_message.chat.username,
+                type: ctx.message.reply_to_message.chat.type,
+            },
+            from: {
+                id: ctx.message.reply_to_message.from.id,
+                is_bot: ctx.message.reply_to_message.from.is_bot,
+                username: ctx.message.reply_to_message.from.username,
+                language_code: ctx.message.reply_to_message.from.language_code,
+            },
+            date: ctx.message.reply_to_message.date,
+            text: ctx.message.reply_to_message.text,
+        };
+    }
+
+    let modelResponse;
+    try {
+        modelResponse = await sendMessage(JSON.stringify(messageData));
+        await ctx.telegram.editMessageText(messageData.chatId, msg.message_id, null, `${modelResponse}\n\n🕐 | Generation time: ${((Date.now() / 1000) - ctx.message.date).toFixed(2)}s.`, { parse_mode: 'markdown' });
+        // Увеличиваем счетчик сообщений в базе данных
+        await User.updateOne({ uid: ctx.from.id }, { $inc: { messages: 1 } });
+    } catch (e) {
+        // Увеличиваем счетчик ошибок в базе данных
+        await sendError(ctx, modelResponse)
+        await User.updateOne({ uid: ctx.from.id }, { $inc: { warns: 1 } });
+        await ctx.deleteMessage(msg.message_id)
+        await sendError(ctx, `Ой ошибка ._. => ${e}\n\nPrompted: ${JSON.stringify(messageData)}\n\n Generation time: ${((Date.now() / 1000) - ctx.message.date).toFixed(2)}s.`);
+    }
 });
 
 function start() {
    // Запускаем бот
-  app.listen(80, async () => {
-    console.log('Server started on port 3000');
+  app.listen(8080, async () => {
+    console.log('Server started on port 8080');
     // Подключение к базе данных MongoDB
     mongoose.connect(process.env.MONGODB_URL, {
   useNewUrlParser: true,
@@ -179,22 +216,48 @@ function start() {
 
 async function checkTime(ctx, startTime, msgDate) {
   if (msgDate < startTime - 30) {
-    await sendError(
+    if (stopped_message_count >= 3) return await sendError(ctx, `Превышен лимит сообщений (${stopped_message_count}).`);
+      
+      stopped_message_count = await spam('add', stopped_message_count)
+      await sendError(
       ctx,
-      `Я отстаю от настоящего времени на более чем 30 сек. (Точнее на ±${Math.floor((startTime - msgDate) / 1000) / 60} мин)\n\n🕐 | Пинг: ${((startTime - msgDate) * 1000)}мс.`,
+      `Я отстаю от настоящего времени на более чем 30 сек. (Точнее на ±${Math.floor((startTime - msgDate) / 60)} мин).\n\nСообщений отправлено ${stopped_message_count}`,
     );
     return false;
   } else {
+    stopped_message_count = await spam('stop', stopped_message_count)
     return true;
   }
 }
 
-async function sendError(ctx, errorMessage) {
-  if (ctx) {
+async function sendError(ctx = null, errorMessage) {
+  if (ctx != null) {
     const message = await ctx.reply(errorMessage);
     setTimeout(async () => {
       await ctx.deleteMessage(message.message_id);
     }, 15000);
   }
   console.error(errorMessage);
+}
+
+async function spam(x, stopped_message_count, ctx) {
+    let spm = await stopped_message_count;
+    switch (x) {
+        case 'add':
+            spm += 1;
+            sendError(ctx, `Adding... ${spm}`);
+            break;
+        case 'remove':
+            spm -= 1;
+            sendError(ctx, `Removing... ${spm}`);
+            break;
+        case 'stop':
+            spm = 0;
+            sendError(ctx, `Stopped... ${spm}`);
+            break;
+        default:
+            sendError(ctx, `Unknown command: ${x}`);
+            break;
+    }
+    return spm;
 }

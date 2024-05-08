@@ -1,22 +1,33 @@
 {
-  "name": "Pirozhenka AI",
-  "version": "1.0.9",
+  "name": "piroz",
+  "version": "2.0.0",
   "description": "Artificial intelligence for communicating with people, creation date 04/20/2024, the bot is named after the owner’s friend, the model is based on Google Gemini-pro",
   "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node index.js"
-  },
-  "keywords": [],
-  "author": "bejiihiu",
-  "license": "ISC",
   "private": true,
   "dependencies": {
     "@google/generative-ai": "^0.7.1",
     "@types/node": "^18.0.6",
+    "axios": "^1.6.8",
     "express": "^4.19.2",
     "mongoose": "^8.3.2",
     "telegraf": "^4.16.3",
     "uuid": "^9.0.1"
-  }
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Coder-TheBeJIIHiu/piroshenka-bot.git"
+  },
+  "keywords": [
+    "ai"
+  ],
+  "author": "bejiihiu",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Coder-TheBeJIIHiu/piroshenka-bot/issues"
+  },
+  "homepage": "https://github.com/Coder-TheBeJIIHiu/piroshenka-bot#readme"
 }
