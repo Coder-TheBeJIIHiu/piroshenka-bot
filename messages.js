@@ -1,7 +1,11 @@
 const package = require('./package.json');
+const history = require('./history.json')
 const fs = require('fs');
 const path = require('path');
-module.exports.prompt = () => [
+
+module.exports.prompt = () => {
+  const len = history.length + 1;
+  const start_prompt = [
     { 
       role: 'user', 
       parts: [
@@ -78,13 +82,16 @@ module.exports.prompt = () => [
           text: `Файловая система: ${JSON.stringify(getDirectoryTree('./'))}`
         },
         {
+          text: `Сообщений в истории до включения бота: ${len}`
+        },
+        {
           text: "И помни, тебя используют очень много людей, поэтому различай пользователей по их userId, _id и отвечай по-разному для каждого. Так-же ты женский пол (Она)."
         },
         {
           text: `Конец переписки (Prompt), продолжайте общение. Предыдущие написанные сообщения автоматически отправляются при запуске бота.`
         },
         {
-          text: `Если кто-то матерится то отказывайся отвечать. Но используй сарказм и типо скобки (Специально делая ошибка, по типу ))0) или (9((.)`
+          text: `Если кто-то матерится то отказывайся отвечать. Но используй сарказм и типо скобки (Специально делая ошибка, по типу ))0) или (9((.). Правила №1, ты должен вести как человек, делая ошибки и т.д.`
         }
       ]
     },
@@ -97,6 +104,12 @@ module.exports.prompt = () => [
       ]
     }
   ]
+  
+  console.log(`Сообщения в истории до включения: ${len}`)
+  return start_prompt.concat(history)
+}
+
+module.exports.addToHistory = addToHistory
 
 function getDirectoryTree(dir) {
     const stats = fs.statSync(dir);
@@ -112,6 +125,7 @@ function getDirectoryTree(dir) {
     };
 
     const files = fs.readdirSync(dir);
+
     files.forEach(file => {
         const filePath = path.join(dir, file);
         const fileStats = fs.statSync(filePath);
@@ -131,4 +145,31 @@ function getDirectoryTree(dir) {
     });
 
     return tree;
+}
+
+
+function addToHistory(userText, modelText) {
+  // Читаем текущее содержимое файла
+  fs.readFile('history.json', 'utf8', (err, data) => {
+    if (err) {
+      console.error('Ошибка при чтении файла:', err);
+      return;
+    }
+
+    let history = JSON.parse(data);
+
+    // Добавляем новые сообщения
+    history.push({ role: 'user', parts: [{ text: userText }] });
+    history.push({ role: 'model', parts: [{ text: modelText }] });
+
+    // Записываем обновленное содержимое обратно в файл
+    fs.writeFile('history.json', JSON.stringify(history), (err) => {
+      if (err) {
+        console.error('Ошибка при записи в файл:', err);
+        return;
+      }
+      console.log(`\nPrompted: ${userText}\nResponse: ${modelText}\n`)
+      console.log('Переписка успешно добавлена в history.json');
+    });
+  });
 }

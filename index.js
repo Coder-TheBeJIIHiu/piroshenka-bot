@@ -5,7 +5,7 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const axios = require('axios');
 const express = require('express');
 const app = express();
-const { prompt } = require("./messages.js");
+const { prompt, addToHistory } = require("./messages.js");
 let stopped_message_count = 0;
 
 start()
@@ -44,7 +44,6 @@ bot.use(async (ctx, next) => {
 
     const Time = await checkTime(ctx, startTime, msgDate);
     if (!Time) return;
-    sendError(ctx, Time)
 
     // Проверяем наличие ctx.message перед использованием
     if (ctx.message) {
@@ -81,17 +80,21 @@ const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
 const chat = model.startChat({
   history: prompt(),
   generationConfig: {
-    maxOutputTokens: 512,
+    maxOutputTokens: 2048,
   },
 });
 
 // Функция для отправки сообщения
 async function sendMessage(msg) {
+  const startTime = Date.now()
   const result = await chat.sendMessage(msg);
   const response = await result.response;
   const text = response.text();
-  console.log(`\nPrompted: ${msg}\nResponse: ${text}\n`)
-  return text;
+  addToHistory(msg, text);
+  return {
+      text: text,
+      time: Date.now() - startTime
+  };
 }
 
 // Обработчик команды /start
@@ -122,7 +125,7 @@ bot.on(['text', 'voice'], async (ctx) => {
     }
 
     // Отправляем ответ пользователю
-    const msg = await ctx.reply("Хм... Процесс обработки запроса...", {
+    const msg = await ctx.reply("ㅤ", {
         reply_parameters: {
             message_id: ctx.message.message_id,
             allow_sending_without_reply: true
@@ -181,19 +184,24 @@ bot.on(['text', 'voice'], async (ctx) => {
             text: ctx.message.reply_to_message.text,
         };
     }
-
+    let modelResponseJson;
     let modelResponse;
     try {
-        modelResponse = await sendMessage(JSON.stringify(messageData));
-        await ctx.telegram.editMessageText(messageData.chatId, msg.message_id, null, `${modelResponse}\n\n🕐 | Generation time: ${((Date.now() / 1000) - ctx.message.date).toFixed(2)}s.`, { parse_mode: 'markdown' });
+        modelResponseJson = await sendMessage(JSON.stringify(messageData));
+        modelResponse = modelResponseJson.text;
+        await ctx.telegram.editMessageText(messageData.chatId, msg.message_id, null, `${modelResponse}\n\n🕗 • Total generation time: ${((Date.now() / 1000) - ctx.message.date).toFixed(2)}s.\n🌐 • Text generation time: ${(modelResponseJson.time / 1000).toFixed(2)}s.`, { parse_mode: 'markdown' });
         // Увеличиваем счетчик сообщений в базе данных
         await User.updateOne({ uid: ctx.from.id }, { $inc: { messages: 1 } });
     } catch (e) {
         // Увеличиваем счетчик ошибок в базе данных
-        await sendError(ctx, modelResponse)
+        if (modelResponse != undefined) {
+          await ctx.reply(modelResponse)
+        } else {
+          await sendError(ctx, modelResponse)
+        }
         await User.updateOne({ uid: ctx.from.id }, { $inc: { warns: 1 } });
         await ctx.deleteMessage(msg.message_id)
-        await sendError(ctx, `Ой ошибка ._. => ${e}\n\nPrompted: ${JSON.stringify(messageData)}\n\n Generation time: ${((Date.now() / 1000) - ctx.message.date).toFixed(2)}s.`);
+        await sendError(ctx, `Ой ошибка ._. => ${e}\n\nPrompted: ${JSON.stringify(messageData)}\n\n🕗 • Total generation time: ${((Date.now() / 1000) - ctx.message.date).toFixed(2)}s.\n🌐 • Text generation time: ${(modelResponseJson.time / 1000).toFixed(2)}s.`);
     }
 });
 
